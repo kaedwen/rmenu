@@ -19,7 +19,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{command, renderer::Renderer};
+use crate::{cli, command, renderer::Renderer};
 
 #[derive(PartialEq, Debug)]
 pub enum LoopAction {
@@ -40,7 +40,10 @@ pub struct AppContext {
     pub list: command::CommandList,
 }
 
-pub struct App {}
+pub struct App {
+    args: cli::Args,
+    event_loop: EventLoop<'static, LoopContext>,
+}
 
 impl Deref for Filter {
     type Target = String;
@@ -86,7 +89,15 @@ default_environment!(RMenuEnv,
 );
 
 impl App {
-    pub fn run() -> std::io::Result<()> {
+    pub fn new(args: cli::Args) -> std::io::Result<Self> {
+        let event_loop = EventLoop::<LoopContext>::try_new()?;
+
+        Ok(App {
+            args,
+            event_loop
+        })
+    }
+    pub fn run(&mut self) -> std::io::Result<()> {
         let (env, display, queue) =
             new_default_environment!(RMenuEnv, fields = [layer_shell: SimpleGlobal::new(),])
                 .expect("Initial roundtrip failed!");
@@ -98,12 +109,10 @@ impl App {
 
         info!("{}", app_context.list);
 
-        let mut event_loop = EventLoop::<LoopContext>::try_new().unwrap();
+        WaylandSource::new(queue).quick_insert(self.event_loop.handle())?;
 
-        WaylandSource::new(queue).quick_insert(event_loop.handle())?;
-
-        // create out loop context
-        let mut loop_context = LoopContext::new(event_loop.handle(), app_context);
+        // create our loop context
+        let mut loop_context = LoopContext::new(self.event_loop.handle(), app_context);
 
         let renderer = Renderer::new(env, loop_context.clone());
 
@@ -111,7 +120,8 @@ impl App {
             renderer.handle_events(loop_context.action.take() == Some(LoopAction::Redraw));
 
             display.flush().unwrap();
-            event_loop.dispatch(Duration::from_millis(100), &mut loop_context)?;
+            self.event_loop
+                .dispatch(Duration::from_millis(100), &mut loop_context)?;
         }
     }
 }

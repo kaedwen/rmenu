@@ -56,10 +56,8 @@ pub struct Surface {
 
 pub struct Renderer {
     env: Environment<RMenuEnv>,
-    context: LoopContext,
-    //context: Rc<RefCell<AppContext>>,
     surfaces: Rc<RefCell<Vec<(u32, Surface)>>>,
-    //handle: LoopHandle<'static, LoopContext>,
+    context: LoopContext,
 }
 
 impl Surface {
@@ -262,38 +260,20 @@ impl Drop for Surface {
 }
 
 impl Renderer {
-    pub fn new(
-        env: Environment<RMenuEnv>,
-        context: LoopContext,
-    ) -> Self {
-        let r = Renderer {
-            env,
-            context: context.to_owned(),
+    pub fn new(env: Environment<RMenuEnv>, context: LoopContext) -> Self {
+        let renderer = Renderer {
             surfaces: Rc::new(RefCell::new(Vec::<(u32, Surface)>::new())),
+            context,
+            env,
         };
 
-        r.init();
+        renderer.init();
 
-        r
+        renderer
     }
     fn init(&self) {
         self.setup_keyboard_handler();
         self.setup_output_handler();
-    }
-    pub fn handle_events(&self, redraw: bool) {
-        let mut surfaces = self.surfaces.borrow_mut();
-        let mut i = 0;
-        while i != surfaces.len() {
-            if surfaces[i].1.handle_events() {
-                surfaces.remove(i);
-            } else {
-                if redraw {
-                    surfaces[i].1.redraw();
-                }
-
-                i += 1;
-            }
-        }
     }
     fn setup_output_handler(&self) {
         let layer_shell = self
@@ -530,6 +510,21 @@ impl Renderer {
                 }
                 _ => false,
             },
+        }
+    }
+    pub fn handle_events(&self, redraw: bool) {
+        let mut surfaces = self.surfaces.borrow_mut();
+        let mut i = 0;
+        while i != surfaces.len() {
+            if surfaces[i].1.handle_events() {
+                surfaces.remove(i);
+            } else {
+                if redraw {
+                    surfaces[i].1.redraw();
+                }
+
+                i += 1;
+            }
         }
     }
 }
