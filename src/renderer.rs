@@ -12,7 +12,7 @@ use smithay_client_toolkit::{
     environment::Environment,
     output::{with_output_info, OutputInfo},
     reexports::{
-        calloop::{self, EventLoop},
+        calloop,
         protocols::wlr::unstable::layer_shell::v1::client::{
             zwlr_layer_shell_v1, zwlr_layer_surface_v1,
         },
@@ -56,8 +56,10 @@ pub struct Surface {
 
 pub struct Renderer {
     env: Environment<RMenuEnv>,
-    context: Rc<RefCell<AppContext>>,
+    context: LoopContext,
+    //context: Rc<RefCell<AppContext>>,
     surfaces: Rc<RefCell<Vec<(u32, Surface)>>>,
+    //handle: LoopHandle<'static, LoopContext>,
 }
 
 impl Surface {
@@ -260,18 +262,25 @@ impl Drop for Surface {
 }
 
 impl Renderer {
-    pub fn new(env: Environment<RMenuEnv>, context: Rc<RefCell<AppContext>>) -> Self {
-        Renderer {
+    pub fn new(
+        env: Environment<RMenuEnv>,
+        context: LoopContext,
+    ) -> Self {
+        let r = Renderer {
             env,
             context: context.to_owned(),
             surfaces: Rc::new(RefCell::new(Vec::<(u32, Surface)>::new())),
-        }
+        };
+
+        r.init();
+
+        r
     }
-    pub fn init(&self, event_loop: &EventLoop<LoopContext>) {
-        self.setup_keyboard_handler(event_loop);
+    fn init(&self) {
+        self.setup_keyboard_handler();
         self.setup_output_handler();
     }
-    pub fn render_loop(&self, redraw: bool) {
+    pub fn handle_events(&self, redraw: bool) {
         let mut surfaces = self.surfaces.borrow_mut();
         let mut i = 0;
         while i != surfaces.len() {
@@ -292,7 +301,7 @@ impl Renderer {
             .require_global::<zwlr_layer_shell_v1::ZwlrLayerShellV1>();
 
         let env_handle = self.env.clone();
-        let context_handle = self.context.clone();
+        let context_handle = self.context.app_context.clone();
         let surfaces_handle = self.surfaces.clone();
         let output_handler = move |output: wl_output::WlOutput, info: &OutputInfo| {
             if info.obsolete {
@@ -331,11 +340,13 @@ impl Renderer {
             .env
             .listen_for_outputs(move |output, info, _| output_handler(output, info));
     }
-    fn setup_keyboard_handler(&self, event_loop: &EventLoop<LoopContext>) {
+    fn setup_keyboard_handler(&self) {
         let mut seats = Vec::<(
             String,
             Option<(wl_keyboard::WlKeyboard, calloop::RegistrationToken)>,
         )>::new();
+
+        let handle = self.context.handle.clone();
 
         // first process already existing seats
         for seat in self.env.get_all_seats() {
@@ -349,7 +360,7 @@ impl Renderer {
                 if has_kbd {
                     let seat_name = name.clone();
                     match map_keyboard_repeat(
-                        event_loop.handle(),
+                        handle.clone(),
                         &seat,
                         None,
                         RepeatKind::System,
@@ -357,11 +368,11 @@ impl Renderer {
                             let loop_context = dispatch_data
                                 .get::<LoopContext>()
                                 .expect("To get our Loop Context");
-                            let context = &loop_context.app_context;
+                            let app_context = &loop_context.app_context;
 
-                            if Self::handle_keyboard_event(event, &seat_name, context) {
+                            if Self::handle_keyboard_event(event, &seat_name, app_context) {
                                 // apply filter
-                                context.borrow_mut().filter();
+                                app_context.borrow_mut().filter();
 
                                 loop_context.action.set(Some(LoopAction::Redraw));
                             }
@@ -382,8 +393,7 @@ impl Renderer {
         }
 
         // then setup a listener for changes
-        let loop_handle = event_loop.handle();
-        /*let _seat_listener = self.env.listen_for_seats(move |seat, seat_data, _| {
+        let _seat_listener = self.env.listen_for_seats(move |seat, seat_data, _| {
             // find the seat in the vec of seats, or insert it if it is unknown
             let idx = seats.iter().position(|(name, _)| name == &seat_data.name);
             let idx = idx.unwrap_or_else(|| {
@@ -391,6 +401,7 @@ impl Renderer {
                 seats.len() - 1
             });
 
+            let handle = handle.clone();
             let (_, ref mut opt_kbd) = &mut seats[idx];
             // we should map a keyboard if the seat has the capability & is not defunct
             if seat_data.has_keyboard && !seat_data.defunct {
@@ -398,11 +409,11 @@ impl Renderer {
                     // we should initalize a keyboard
                     let seat_name = seat_data.name.clone();
                     match map_keyboard_repeat(
-                        loop_handle.clone(),
+                        handle,
                         &seat,
                         None,
                         RepeatKind::System,
-                        move |event, _, dispatch_data| {
+                        move |event, _, mut dispatch_data| {
                             let loop_context = dispatch_data
                                 .get::<LoopContext>()
                                 .expect("To get our Loop Context");
@@ -430,9 +441,9 @@ impl Renderer {
             } else if let Some((kbd, source)) = opt_kbd.take() {
                 // the keyboard has been removed, cleanup
                 kbd.release();
-                loop_handle.remove(source);
+                handle.remove(source);
             }
-        });*/
+        });
     }
     fn handle_keyboard_event(
         event: KbEvent,
