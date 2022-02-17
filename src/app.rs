@@ -38,10 +38,10 @@ pub struct Filter(pub String);
 pub struct AppContext {
     pub input: Filter,
     pub list: command::CommandList,
+    pub config: cli::Config,
 }
 
 pub struct App {
-    args: cli::Args,
     event_loop: EventLoop<'static, LoopContext>,
 }
 
@@ -89,22 +89,24 @@ default_environment!(RMenuEnv,
 );
 
 impl App {
-    pub fn new(args: cli::Args) -> std::io::Result<Self> {
+    pub fn new() -> std::io::Result<Self> {
         let event_loop = EventLoop::<LoopContext>::try_new()?;
 
-        Ok(App {
-            args,
-            event_loop
-        })
+
+        Ok(App { event_loop })
     }
-    pub fn run(&mut self) -> std::io::Result<()> {
+    pub fn run(&mut self, config: cli::Config) -> std::io::Result<()> {
+
+        info!("Config {:?}", config);
+        
         let (env, display, queue) =
             new_default_environment!(RMenuEnv, fields = [layer_shell: SimpleGlobal::new(),])
                 .expect("Initial roundtrip failed!");
 
         let app_context = AppContext {
             input: Filter(String::new()),
-            list: command::CommandList::new()?,
+            list: command::CommandList::new(&config)?,
+            config,
         };
 
         info!("{}", app_context.list);

@@ -28,6 +28,8 @@ use wayland_client::{
     Attached, Main,
 };
 
+use crate::cli::Color;
+
 use super::{
     app::{AppContext, LoopAction, LoopContext, RMenuEnv},
     command,
@@ -37,6 +39,31 @@ use super::{
 //pub static ROBOTO_REGULAR_FONT: &'static [u8; 289080] = include_bytes!("../Roboto-Medium.ttf");
 pub static SHARETECH_REGULAR_FONT: &'static [u8; 42756] =
     include_bytes!("../ShareTechMono-Regular.ttf");
+
+static DEFAULT_FOREGROUND: Color = Color {
+    r: 0xFF,
+    g: 0x00,
+    b: 0x00,
+    a: 0x00,
+};
+
+static DEFAULT_BACKGROUND: Color = Color {
+    r: 0x00,
+    g: 0x00,
+    b: 0x00,
+    a: 0xFF,
+};
+
+impl Into<SolidSource> for Color {
+    fn into(self) -> SolidSource {
+        SolidSource {
+            r: self.r,
+            g: self.g,
+            b: self.b,
+            a: self.a,
+        }
+    }
+}
 
 #[derive(PartialEq, Copy, Clone)]
 enum RenderEvent {
@@ -159,20 +186,15 @@ impl Surface {
                 Ok((canvas, buffer)) => {
                     let mut dt = DrawTarget::new(width, height);
 
+                    let context = self.context.borrow();
+
+                    let foreground: SolidSource = context.config.style.foreground_color.clone().unwrap_or_else(|| DEFAULT_FOREGROUND).into();
+                    let background: SolidSource = context.config.style.background_color.clone().unwrap_or_else(|| DEFAULT_BACKGROUND).into();
+
                     let point_size = 32.;
                     let options = DrawOptions::new();
-                    let fg_brush = Source::Solid(SolidSource {
-                        r: 0xFF,
-                        g: 0x00,
-                        b: 0x00,
-                        a: 0xFF,
-                    });
-                    let bg_brush = Source::Solid(SolidSource {
-                        r: 0x00,
-                        g: 0x00,
-                        b: 0x00,
-                        a: 0xFF,
-                    });
+                    let fg_brush = Source::Solid(foreground);
+                    let bg_brush = Source::Solid(background);
 
                     let filter = &self.context.borrow().input.0;
                     let filter_text = format!("> {}", filter);

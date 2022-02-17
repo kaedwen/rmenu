@@ -5,6 +5,7 @@ use std::{
     process::Stdio,
 };
 
+use crate::cli;
 use log::{debug, error, info};
 use std::os::unix::fs::PermissionsExt;
 
@@ -19,8 +20,8 @@ pub struct CommandList {
 }
 
 impl CommandList {
-    pub fn new() -> std::io::Result<Self> {
-        let initial = gather_commands()?;
+    pub fn new(config: &cli::Config) -> std::io::Result<Self> {
+        let initial = gather_commands(config)?;
         let filtered = initial.clone();
 
         Ok(Self { initial, filtered })
@@ -58,7 +59,7 @@ impl Display for Command {
     }
 }
 
-pub fn gather_commands() -> std::io::Result<Vec<Command>> {
+fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<Command>> {
     let mut list = Vec::<Command>::new();
 
     if let Ok(path) = std::env::var("PATH") {
@@ -70,8 +71,17 @@ pub fn gather_commands() -> std::io::Result<Vec<Command>> {
                     std::fs::read_dir(target)?
                         .filter_map(Result::ok)
                         .filter(|i| {
+                            // filter out not executable
                             i.metadata()
                                 .map_or_else(|_| false, |m| m.permissions().mode() & 0o111 != 0)
+                        })
+                        .filter(|i| {
+                            // filter out blacklisted binaries
+                            if let Ok(item) = &i.file_name().into_string() {
+                                !config.blacklist.contains(item)
+                            } else {
+                                false
+                            }
                         })
                         .map(|i| Command { path: i.path() }),
                 );
