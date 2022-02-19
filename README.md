@@ -1,5 +1,5 @@
 # rmenu
-Wayland base dymanic launcher fully written in rust. The launcher can de customized and collects a usage statistic to provide the best matching binary to launch.
+Wayland based dymanic launcher fully written in rust. The launcher can be customized and collects a usage statistic to provide the best matching binary to launch.
 
 # Building
 ```
