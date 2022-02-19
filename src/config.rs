@@ -99,7 +99,10 @@ impl AppConfig {
         self.store_history()
     }
     fn store_history(&self) -> std::io::Result<()> {
-        if let Some(path) = &self.args.history {
+        if let Some(path) = self.args.history.as_ref().and_then(|path| {
+            path.parent()
+                .and_then(|parent| std::fs::create_dir_all(parent).ok().map(|_| path))
+        }) {
             self.history.to_path(&path)
         } else {
             Ok(())
