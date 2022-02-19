@@ -17,6 +17,6 @@
 # font.path has the highest priority
 #font:
 #  path: "/usr/share/font/xxx.ttf"
-#  name: "Roboto"
+#  name: "FreeMono"
 #  spacing: 2
 #  size: 24
