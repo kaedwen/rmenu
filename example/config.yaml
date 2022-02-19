@@ -2,7 +2,7 @@
 #blacklist:
 #  - chromedriver
 
-# Define a whitelist to explicitly some these binaries when found in PATH
+# Define a whitelist to explicitly show these binaries when found in PATH
 #whitelist:
 #  - vlc
 
