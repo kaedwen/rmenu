@@ -19,7 +19,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{cli, command, renderer::Renderer};
+use crate::{config, command, renderer::Renderer};
 
 #[derive(PartialEq, Debug)]
 pub enum LoopAction {
@@ -38,7 +38,7 @@ pub struct Filter(pub String);
 pub struct AppContext {
     pub input: Filter,
     pub list: command::CommandList,
-    pub app_config: cli::AppConfig,
+    pub app_config: config::AppConfig,
     pub current_index: usize,
     pub modifiers: ModifiersState,
 }
@@ -97,7 +97,7 @@ impl App {
 
         Ok(App { event_loop })
     }
-    pub fn run(&mut self, app_config: cli::AppConfig) -> std::io::Result<()> {
+    pub fn run(&mut self, app_config: config::AppConfig) -> std::io::Result<()> {
 
         info!("Config {:?}", app_config);
         

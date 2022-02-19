@@ -1,0 +1,22 @@
+# Define a blacklist to hide some binaries found in PATH
+#blacklist:
+#  - chromedriver
+
+# Define a whitelist to explicitly some these binaries when found in PATH
+#whitelist:
+#  - vlc
+
+# Some style options to customize the colors
+#style:
+#  highlight_color: "#FF0000FF"
+#  foreground_color: "#101010FF"
+#  background_color: "#000000BB"
+#  height: 32
+
+# Some font options to customize
+# font.path has the highest priority
+#font:
+#  path: "/usr/share/font/xxx.ttf"
+#  name: "Roboto"
+#  spacing: 2
+#  size: 24

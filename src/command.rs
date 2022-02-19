@@ -5,8 +5,8 @@ use std::{
     process::Stdio,
 };
 
-use crate::cli;
-use log::{debug, error, info};
+use crate::config;
+use log::{trace, debug, error, info};
 use std::os::unix::fs::PermissionsExt;
 
 #[derive(Clone)]
@@ -22,13 +22,13 @@ pub struct CommandList {
 }
 
 impl CommandList {
-    pub fn new(app_config: &cli::AppConfig) -> std::io::Result<Self> {
+    pub fn new(app_config: &config::AppConfig) -> std::io::Result<Self> {
         let initial = gather_commands(&app_config.config)?;
         let filtered = Self::filter_data(None::<&String>, &initial, &app_config.history);
 
         Ok(Self { initial, filtered })
     }
-    pub fn filter(&mut self, filter: &String, history: &cli::History) {
+    pub fn filter(&mut self, filter: &String, history: &config::History) {
         self.filtered = Self::filter_data(Some(filter), &self.initial, history)
     }
     pub fn filtered_len(&self) -> usize {
@@ -42,7 +42,7 @@ impl CommandList {
     fn filter_data(
         filter: Option<&String>,
         data: &Vec<PathBuf>,
-        history: &cli::History,
+        history: &config::History,
     ) -> Vec<Command> {
         let mut list = data
             .iter()
@@ -102,7 +102,7 @@ impl Command {
     }
 }
 
-fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<PathBuf>> {
+fn gather_commands(config: &config::Config) -> std::io::Result<Vec<PathBuf>> {
     let mut list = Vec::<PathBuf>::new();
 
     if let Ok(path) = std::env::var("PATH") {
@@ -134,7 +134,7 @@ fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<PathBuf>> {
                                     Some(i.path())
                                 };
 
-                                debug!("WHITE {} - {:?}", name, w);
+                                trace!("WHITE {} - {:?}", name, w);
 
                                 // filter out blacklisted binaries
                                 let b = if let Some(list) = config.blacklist.as_ref() {
@@ -150,7 +150,7 @@ fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<PathBuf>> {
                                     Some(i.path())
                                 };
 
-                                debug!("BLACK {} - {:?}", name, b);
+                                trace!("BLACK {} - {:?}", name, b);
 
                                 w.and(b)
                             })

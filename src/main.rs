@@ -1,5 +1,5 @@
 mod app;
-mod cli;
+mod config;
 mod command;
 mod renderer;
 
@@ -8,7 +8,7 @@ use app::App;
 fn main() -> std::io::Result<()> {
     env_logger::init();
 
-    let config = cli::parse().expect("A valid Config");
+    let config = config::parse().expect("A valid Config");
 
     App::new()?.run(config)
 }

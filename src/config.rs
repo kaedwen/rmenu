@@ -20,11 +20,13 @@ pub struct Style {
     pub highlight_color: Option<Color>,
     pub foreground_color: Option<Color>,
     pub background_color: Option<Color>,
+    pub height: u32,
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Font {
     pub path: Option<PathBuf>,
+    pub name: Option<String>,
     pub spacing: Option<f32>,
     pub size: Option<f32>,
 }

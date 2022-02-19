@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use font_kit::source::SystemSource;
+
 use raqote::{DrawOptions, DrawTarget, Point, SolidSource, Source};
 
 use font_kit::font::Font;
@@ -29,19 +31,19 @@ use wayland_client::{
     Attached, Main,
 };
 
-use crate::cli::Color;
+use crate::config::Color;
 
 use super::{
     app::{AppContext, LoopAction, LoopContext, RMenuEnv},
     command,
 };
 
-//pub static FREEMONO_REGULAR_FONT: &'static [u8; 584424] = include_bytes!("../FreeMono.ttf");
-static DEFAULT_FONT: &'static [u8; 289080] = include_bytes!("../Roboto-Medium.ttf");
-//pub static DEFAULT_FONT: &'static [u8; 42756] = include_bytes!("../ShareTechMono-Regular.ttf");
+static DEFAULT_HEIGHT: u32 = 32;
+
+static DEFAULT_FONT: &'static [u8; 42756] = include_bytes!("../assets/ShareTechMono-Regular.ttf");
 
 static DEFAULT_FONT_SIZE: f32 = 24.;
-static DEFAULT_FONT_SPACING: f32 = 1.1;
+static DEFAULT_FONT_SPACING: f32 = 2.;
 
 static DEFAULT_HIGHLIGHT: Color = Color {
     r: 0xFF,
@@ -117,6 +119,15 @@ impl Surface {
         context: Rc<RefCell<AppContext>>,
         pool: RefCell<AutoMemPool>,
     ) -> Self {
+        let height = context
+            .borrow()
+            .app_config
+            .config
+            .style
+            .as_ref()
+            .map(|s| s.height)
+            .unwrap_or(DEFAULT_HEIGHT);
+
         let layer_surface = layer_shell.get_layer_surface(
             &surface,
             Some(output),
@@ -132,7 +143,7 @@ impl Surface {
         layer_surface.set_exclusive_zone(-1);
 
         // set hight and leave widht 0 to strtch the whole screen in configure
-        layer_surface.set_size(0, 32);
+        layer_surface.set_size(0, height);
 
         // Anchor to the top left/right corner of the output
         layer_surface.set_anchor(
@@ -391,7 +402,36 @@ impl Renderer {
         let renderer_context = {
             let app_config = &context.app_context.borrow().app_config;
 
+            let font = app_config
+                .config
+                .font
+                .as_ref()
+                .and_then(|font| {
+                    let o1 = font.path.as_ref().and_then(|path| {
+                        std::fs::read(path).ok().and_then(|data| {
+                            font_kit::font::Font::from_bytes(Arc::new(data), 0).ok()
+                        })
+                    });
+
+                    let o2 = font.name.as_ref().and_then(|name| {
+                        println!("{}", name);
+                        SystemSource::new()
+                            .select_by_postscript_name(&name)
+                            .ok()
+                            .and_then(|h| h.load().ok())
+                    });
+
+                    debug!("FONT path {:?}, name {:?}", o1, o2);
+
+                    o1.or(o2)
+                })
+                .unwrap_or(
+                    font_kit::font::Font::from_bytes(Arc::new(DEFAULT_FONT.to_vec()), 0)
+                        .expect("To load FreeMono TTF"),
+                );
+
             Rc::new(RefCell::new(RendererContext {
+                font,
                 highlight: app_config
                     .config
                     .style
@@ -413,25 +453,6 @@ impl Renderer {
                     .and_then(|style| style.background_color.clone())
                     .unwrap_or(DEFAULT_BACKGROUND)
                     .into(),
-                font: font_kit::font::Font::from_bytes(
-                    Arc::new(
-                        app_config
-                            .config
-                            .font
-                            .as_ref()
-                            .and_then(|f| f.path.as_ref())
-                            .and_then(|path| {
-                                if let Ok(data) = std::fs::read(path) {
-                                    Some(data)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(DEFAULT_FONT.to_vec()),
-                    ),
-                    0,
-                )
-                .expect("To load FreeMono TTF"),
                 font_spacing: app_config
                     .config
                     .font
