@@ -17,6 +17,7 @@ pub struct Color {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Style {
+    pub highlight_color: Option<Color>,
     pub foreground_color: Option<Color>,
     pub background_color: Option<Color>,
 }

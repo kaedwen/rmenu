@@ -7,7 +7,7 @@ use smithay_client_toolkit::{
         calloop::{EventLoop, LoopHandle},
         protocols::wlr::unstable::layer_shell::v1::client::zwlr_layer_shell_v1,
     },
-    WaylandSource,
+    WaylandSource, seat::keyboard::ModifiersState,
 };
 
 use std::{
@@ -39,6 +39,8 @@ pub struct AppContext {
     pub input: Filter,
     pub list: command::CommandList,
     pub app_config: cli::AppConfig,
+    pub current_index: usize,
+    pub modifiers: ModifiersState,
 }
 
 pub struct App {
@@ -71,7 +73,7 @@ impl LoopContext {
 
 impl AppContext {
     pub fn target(&self) -> Option<&command::Command> {
-        self.list.filtered.first()
+        self.list.filtered.get(self.current_index)
     }
     pub fn filter(&mut self) {
         self.list.filter(&self.input, &self.app_config.history);
@@ -106,6 +108,8 @@ impl App {
         let app_context = AppContext {
             input: Filter(String::new()),
             list: command::CommandList::new(&app_config)?,
+            modifiers: Default::default(),
+            current_index: 0,
             app_config,
         };
 

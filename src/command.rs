@@ -31,6 +31,9 @@ impl CommandList {
     pub fn filter(&mut self, filter: &String, history: &cli::History) {
         self.filtered = Self::filter_data(Some(filter), &self.initial, history)
     }
+    pub fn filtered_len(&self) -> usize {
+        self.filtered.len()
+    }
     fn filename(path: &Path) -> Option<String> {
         path.file_name()
             .and_then(|s| s.to_str())

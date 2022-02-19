@@ -2,6 +2,7 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::Arc,
+    time::Duration,
 };
 
 use raqote::{DrawOptions, DrawTarget, Point, SolidSource, Source};
@@ -12,7 +13,7 @@ use smithay_client_toolkit::{
     environment::Environment,
     output::{with_output_info, OutputInfo},
     reexports::{
-        calloop,
+        calloop::{self, timer::Timer},
         protocols::wlr::unstable::layer_shell::v1::client::{
             zwlr_layer_shell_v1, zwlr_layer_surface_v1,
         },
@@ -40,13 +41,20 @@ static DEFAULT_FONT: &'static [u8; 289080] = include_bytes!("../Roboto-Medium.tt
 //pub static DEFAULT_FONT: &'static [u8; 42756] = include_bytes!("../ShareTechMono-Regular.ttf");
 
 static DEFAULT_FONT_SIZE: f32 = 24.;
-static DEFAULT_FONT_SPACING: f32 = 1.;
+static DEFAULT_FONT_SPACING: f32 = 1.1;
+
+static DEFAULT_HIGHLIGHT: Color = Color {
+    r: 0xFF,
+    g: 0x00,
+    b: 0x00,
+    a: 0xFF,
+};
 
 static DEFAULT_FOREGROUND: Color = Color {
     r: 0xD0,
     g: 0xD0,
     b: 0xD0,
-    a: 0x00,
+    a: 0xFF,
 };
 
 static DEFAULT_BACKGROUND: Color = Color {
@@ -81,9 +89,11 @@ pub struct Surface {
     dimensions: Option<(i32, i32)>,
     context: Rc<RefCell<AppContext>>,
     pool: RefCell<AutoMemPool>,
+    cursor: Option<f32>,
 }
 
 struct RendererContext {
+    highlight: SolidSource,
     foreground: SolidSource,
     background: SolidSource,
     font_spacing: f32,
@@ -163,6 +173,7 @@ impl Surface {
             next_render_event,
             renderer_context,
             dimensions: None,
+            cursor: None,
             context,
             pool,
         }
@@ -185,7 +196,7 @@ impl Surface {
         }
     }
 
-    fn draw(&self, dimensions: Option<(i32, i32)>) {
+    fn draw(&mut self, dimensions: Option<(i32, i32)>) {
         if let Some((width, height)) = dimensions {
             match self
                 .pool
@@ -196,16 +207,25 @@ impl Surface {
                     let mut dt = DrawTarget::new(width, height);
 
                     let renderer_context = self.renderer_context.borrow();
+                    let current_index = self.context.borrow().current_index;
 
                     let options = DrawOptions::new();
                     let point_size = renderer_context.font_size;
-                    let fg_brush = Source::Solid(renderer_context.foreground);
-                    let bg_brush = Source::Solid(renderer_context.background);
+                    let highlight_brush = Source::Solid(renderer_context.highlight);
+                    let foreground_brush = Source::Solid(renderer_context.foreground);
+                    let background_brush = Source::Solid(renderer_context.background);
 
                     let filter = &self.context.borrow().input.0;
-                    let filter_text = format!("> {}|", filter);
+                    let filter_text = format!("> {}", filter);
 
-                    dt.fill_rect(0., 0., width as f32, height as f32, &bg_brush, &options);
+                    dt.fill_rect(
+                        0.,
+                        0.,
+                        width as f32,
+                        height as f32,
+                        &background_brush,
+                        &options,
+                    );
 
                     let offset = draw_text(
                         &mut dt,
@@ -213,24 +233,52 @@ impl Surface {
                         point_size,
                         filter_text.as_str(),
                         Point::new(0., height as f32 * 3. / 5.),
-                        &fg_brush,
+                        &foreground_brush,
                         &options,
                         renderer_context.font_spacing,
                     );
+
+                    self.cursor = Some(offset);
 
                     let mut start_list = offset.max(200.);
 
                     // a little space just to be sure
                     start_list += 20.;
 
-                    for name in self.context.borrow().list.filtered.iter().map(|c| &c.name) {
+                    if current_index > 0 {
+                        start_list = draw_text(
+                            &mut dt,
+                            &renderer_context.font,
+                            point_size,
+                            "<",
+                            Point::new(start_list, height as f32 * 3. / 5.),
+                            &foreground_brush,
+                            &options,
+                            renderer_context.font_spacing,
+                        ) + 15.;
+                    }
+
+                    for (index, name) in self
+                        .context
+                        .borrow()
+                        .list
+                        .filtered
+                        .iter()
+                        .map(|c| &c.name)
+                        .skip(current_index)
+                        .enumerate()
+                    {
                         start_list = draw_text(
                             &mut dt,
                             &renderer_context.font,
                             point_size,
                             name,
                             Point::new(start_list, height as f32 * 3. / 5.),
-                            &fg_brush,
+                            if index == 0 {
+                                &highlight_brush
+                            } else {
+                                &foreground_brush
+                            },
                             &options,
                             renderer_context.font_spacing,
                         ) + 15.;
@@ -267,9 +315,67 @@ impl Surface {
             warn!("No dimensions given!");
         }
     }
-
-    pub fn redraw(&self) {
+    pub fn redraw(&mut self) {
         self.draw(self.dimensions);
+    }
+    pub fn draw_cursor(&self, draw: bool) {
+        if let (Some((width, height)), Some(offset)) = (self.dimensions, self.cursor) {
+            match self
+                .pool
+                .borrow_mut()
+                .buffer(width, height, 4 * width, wl_shm::Format::Argb8888)
+            {
+                Ok((canvas, buffer)) => {
+                    let mut dt = DrawTarget::new(width, height);
+
+                    let renderer_context = self.renderer_context.borrow();
+
+                    let options = DrawOptions::new();
+                    let point_size = renderer_context.font_size;
+                    let fg_brush = Source::Solid(renderer_context.foreground);
+                    let bg_brush = Source::Solid(renderer_context.background);
+
+                    dt.fill_rect(0., 0., width as f32, height as f32, &bg_brush, &options);
+
+                    let new_offset = draw_text(
+                        &mut dt,
+                        &renderer_context.font,
+                        point_size,
+                        "|",
+                        Point::new(offset, height as f32 * 3. / 5.),
+                        if draw { &fg_brush } else { &bg_brush },
+                        &options,
+                        renderer_context.font_spacing,
+                    );
+
+                    for (src, dst) in dt
+                        .get_data_u8()
+                        .chunks_exact(4)
+                        .zip(canvas.chunks_exact_mut(4))
+                    {
+                        dst[0] = src[0];
+                        dst[1] = src[1];
+                        dst[2] = src[2];
+                        dst[3] = src[3];
+                    }
+
+                    // Attach the buffer to the surface and mark the new part as damaged
+                    self.surface.attach(Some(&buffer), 0, 0);
+                    self.surface.damage_buffer(
+                        offset as i32,
+                        0,
+                        (new_offset - offset) as i32,
+                        height,
+                    );
+
+                    // Finally, commit the surface
+                    self.surface.commit();
+                }
+                Err(e) => {
+                    error!("Failed to request SHM Buffer! - {}", e);
+                }
+            }
+        }
     }
 }
 
@@ -286,6 +392,13 @@ impl Renderer {
             let app_config = &context.app_context.borrow().app_config;
 
             Rc::new(RefCell::new(RendererContext {
+                highlight: app_config
+                    .config
+                    .style
+                    .as_ref()
+                    .and_then(|style| style.highlight_color.clone())
+                    .unwrap_or(DEFAULT_HIGHLIGHT)
+                    .into(),
                 foreground: app_config
                     .config
                     .style
@@ -348,6 +461,24 @@ impl Renderer {
     fn init(&self) {
         self.setup_keyboard_handler();
         self.setup_output_handler();
+        self.setup_cursor();
+    }
+    fn setup_cursor(&self) {
+        let source = Timer::new().expect("Failed to create timer event source!");
+        source.handle().add_timeout(Duration::from_millis(500), ());
+
+        let mut draw = true;
+        let surfaces_handle = self.surfaces.clone();
+        self.context
+            .handle
+            .insert_source(source, move |_, metadata, _| {
+                for (_, surface) in surfaces_handle.borrow().iter() {
+                    surface.draw_cursor(draw);
+                }
+                draw = !draw;
+                metadata.add_timeout(Duration::from_millis(500), ());
+            })
+            .expect("Failed to insert event source!");
     }
     fn setup_output_handler(&self) {
         let layer_shell = self
@@ -538,6 +669,7 @@ impl Renderer {
                     "Modifiers changed to {:?} on seat '{}'.",
                     modifiers, seat_name
                 );
+                context.borrow_mut().modifiers = modifiers;
                 false
             }
             KbEvent::Repeat {
@@ -562,6 +694,22 @@ impl Renderer {
             14 => {
                 // pop one char if backspace
                 (*context.borrow_mut().input).pop();
+                true
+            }
+            /* TAB */
+            15 => {
+                let mut context = context.borrow_mut();
+                if context.modifiers.shift {
+                    if context.current_index > 0 {
+                        // shift index left
+                        context.current_index -= 1;
+                    }
+                } else {
+                    if context.current_index < context.list.filtered_len() {
+                        // shift index right
+                        context.current_index += 1;
+                    }
+                }
                 true
             }
             /* ENTER */
@@ -594,10 +742,20 @@ impl Renderer {
                 Some(txt) => {
                     debug!(" -> Received text \"{}\".", txt);
 
-                    (*context.borrow_mut().input).push_str(txt.as_str());
+                    let mut context = context.borrow_mut();
+
+                    // append key to filter
+                    (*context.input).push_str(txt.as_str());
+
+                    // reset current index
+                    context.current_index = 0;
+
                     true
                 }
-                _ => false,
+                _ => {
+                    debug!("Not handled KEY {:?}", rawkey);
+                    false
+                }
             },
         }
     }
