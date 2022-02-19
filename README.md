@@ -12,9 +12,9 @@ cargo install --path .
 ```
 
 # Customize
-The launcher can be customized placing a config to `~/.config/rmenu/config`.
+The launcher can be customized by placing a config to `~/.config/rmenu/config.yaml`.
 
 Have a look to the example config [here](/example/config.yaml)
 
 # License
-* [GNU LGPLv3 (or any later version)](LICENSE)
+* [GNU GPLv3 (or any later version)](LICENSE)
