@@ -65,9 +65,13 @@ pub fn parse() -> Result<AppConfig> {
         args.config = dirs::home_dir().map(|h| h.join(".config/rmenu/config.yaml"))
     }
 
-    let config = if let Some(path) = &args.config {
-        info!("Reading config from {}", &path.display());
-        serde_yaml::from_reader(&std::fs::File::open(path)?)?
+    let config = if let Some(file) = &args.config.as_ref().and_then(|path| {
+        std::fs::File::open(&path).ok().map(|file| {
+            info!("Reading config from {}", path.display());
+            file
+        })
+    }) {
+        serde_yaml::from_reader(file)?
     } else {
         Default::default()
     };
