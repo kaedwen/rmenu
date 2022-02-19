@@ -38,7 +38,7 @@ pub struct Filter(pub String);
 pub struct AppContext {
     pub input: Filter,
     pub list: command::CommandList,
-    pub config: cli::Config,
+    pub app_config: cli::AppConfig,
 }
 
 pub struct App {
@@ -74,7 +74,7 @@ impl AppContext {
         self.list.filtered.first()
     }
     pub fn filter(&mut self) {
-        self.list.filter(&self.input);
+        self.list.filter(&self.input, &self.app_config.history);
         info!("{}", self.list);
     }
 }
@@ -95,9 +95,9 @@ impl App {
 
         Ok(App { event_loop })
     }
-    pub fn run(&mut self, config: cli::Config) -> std::io::Result<()> {
+    pub fn run(&mut self, app_config: cli::AppConfig) -> std::io::Result<()> {
 
-        info!("Config {:?}", config);
+        info!("Config {:?}", app_config);
         
         let (env, display, queue) =
             new_default_environment!(RMenuEnv, fields = [layer_shell: SimpleGlobal::new(),])
@@ -105,8 +105,8 @@ impl App {
 
         let app_context = AppContext {
             input: Filter(String::new()),
-            list: command::CommandList::new(&config)?,
-            config,
+            list: command::CommandList::new(&app_config)?,
+            app_config,
         };
 
         info!("{}", app_context.list);

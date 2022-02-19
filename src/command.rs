@@ -12,33 +12,62 @@ use std::os::unix::fs::PermissionsExt;
 #[derive(Clone)]
 pub struct Command {
     pub path: PathBuf,
+    pub name: String,
+    weight: u32,
 }
 
 pub struct CommandList {
-    initial: Vec<Command>,
+    initial: Vec<PathBuf>,
     pub filtered: Vec<Command>,
 }
 
 impl CommandList {
-    pub fn new(config: &cli::Config) -> std::io::Result<Self> {
-        let initial = gather_commands(config)?;
-        let filtered = initial.clone();
+    pub fn new(app_config: &cli::AppConfig) -> std::io::Result<Self> {
+        let initial = gather_commands(&app_config.config)?;
+        let filtered = Self::filter_data(None::<&String>, &initial, &app_config.history);
 
         Ok(Self { initial, filtered })
     }
-    pub fn filter(&mut self, filter: &String) {
-        self.filtered = self
-            .initial
+    pub fn filter(&mut self, filter: &String, history: &cli::History) {
+        self.filtered = Self::filter_data(Some(filter), &self.initial, history)
+    }
+    fn filename(path: &Path) -> Option<String> {
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| String::from(s))
+    }
+    fn filter_data(
+        filter: Option<&String>,
+        data: &Vec<PathBuf>,
+        history: &cli::History,
+    ) -> Vec<Command> {
+        let mut list = data
             .iter()
-            .filter_map(|command| {
-                command
-                    .path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .filter(|name| name.to_lowercase().starts_with(filter))
-                    .map(|_| command.clone())
+            .filter_map(|path| {
+                Self::filename(path).and_then(|name| {
+                    if let Some(filter) = filter {
+                        Some(name)
+                            .filter(|name| name.to_lowercase().starts_with(filter))
+                            .map(|name| Command {
+                                path: path.clone(),
+                                weight: history.get_weight(&name),
+                                name,
+                            })
+                    } else {
+                        Some(Command {
+                            path: path.clone(),
+                            weight: history.get_weight(&name),
+                            name,
+                        })
+                    }
+                })
             })
-            .collect();
+            .collect::<Vec<Command>>();
+
+        // sort the weights
+        list.sort_by(|a, b| b.weight.cmp(&a.weight));
+
+        list
     }
 }
 
@@ -59,8 +88,19 @@ impl Display for Command {
     }
 }
 
-fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<Command>> {
-    let mut list = Vec::<Command>::new();
+impl Command {
+    pub fn binary(&self) -> String {
+        String::from(
+            self.path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("Binary string to be converted"),
+        )
+    }
+}
+
+fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<PathBuf>> {
+    let mut list = Vec::<PathBuf>::new();
 
     if let Ok(path) = std::env::var("PATH") {
         for p in path.split(":") {
@@ -75,15 +115,43 @@ fn gather_commands(config: &cli::Config) -> std::io::Result<Vec<Command>> {
                             i.metadata()
                                 .map_or_else(|_| false, |m| m.permissions().mode() & 0o111 != 0)
                         })
-                        .filter(|i| {
-                            // filter out blacklisted binaries
-                            if let Ok(item) = &i.file_name().into_string() {
-                                !config.blacklist.contains(item)
-                            } else {
-                                false
-                            }
-                        })
-                        .map(|i| Command { path: i.path() }),
+                        .filter_map(|i| {
+                            i.file_name().into_string().ok().and_then(|name| {
+                                // filter out whitelisted binaries
+                                let w = if let Some(list) = config.whitelist.as_ref() {
+                                    if list.contains(&name) {
+                                        // whitelist contains -> allow
+                                        Some(i.path())
+                                    } else {
+                                        // whitelist does not contain -> hide
+                                        None
+                                    }
+                                } else {
+                                    // no whitelist given -> allow
+                                    Some(i.path())
+                                };
+
+                                debug!("WHITE {} - {:?}", name, w);
+
+                                // filter out blacklisted binaries
+                                let b = if let Some(list) = config.blacklist.as_ref() {
+                                    if list.contains(&name) {
+                                        // blacklist contains -> hide
+                                        None
+                                    } else {
+                                        // blacklist does not contain -> allow
+                                        Some(i.path())
+                                    }
+                                } else {
+                                    // no backlist given -> allow
+                                    Some(i.path())
+                                };
+
+                                debug!("BLACK {} - {:?}", name, b);
+
+                                w.and(b)
+                            })
+                        }),
                 );
             }
         }

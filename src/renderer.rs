@@ -36,22 +36,24 @@ use super::{
 };
 
 //pub static FREEMONO_REGULAR_FONT: &'static [u8; 584424] = include_bytes!("../FreeMono.ttf");
-//pub static ROBOTO_REGULAR_FONT: &'static [u8; 289080] = include_bytes!("../Roboto-Medium.ttf");
-pub static SHARETECH_REGULAR_FONT: &'static [u8; 42756] =
-    include_bytes!("../ShareTechMono-Regular.ttf");
+static DEFAULT_FONT: &'static [u8; 289080] = include_bytes!("../Roboto-Medium.ttf");
+//pub static DEFAULT_FONT: &'static [u8; 42756] = include_bytes!("../ShareTechMono-Regular.ttf");
+
+static DEFAULT_FONT_SIZE: f32 = 24.;
+static DEFAULT_FONT_SPACING: f32 = 1.;
 
 static DEFAULT_FOREGROUND: Color = Color {
-    r: 0xFF,
-    g: 0x00,
-    b: 0x00,
+    r: 0xD0,
+    g: 0xD0,
+    b: 0xD0,
     a: 0x00,
 };
 
 static DEFAULT_BACKGROUND: Color = Color {
-    r: 0x00,
-    g: 0x00,
-    b: 0x00,
-    a: 0xFF,
+    r: 0x10,
+    g: 0x10,
+    b: 0x10,
+    a: 0xEE,
 };
 
 impl Into<SolidSource> for Color {
@@ -75,15 +77,24 @@ pub struct Surface {
     surface: wl_surface::WlSurface,
     layer_surface: Main<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1>,
     next_render_event: Rc<Cell<Option<RenderEvent>>>,
+    renderer_context: Rc<RefCell<RendererContext>>,
     dimensions: Option<(i32, i32)>,
     context: Rc<RefCell<AppContext>>,
     pool: RefCell<AutoMemPool>,
+}
+
+struct RendererContext {
+    foreground: SolidSource,
+    background: SolidSource,
+    font_spacing: f32,
+    font_size: f32,
     font: Font,
 }
 
 pub struct Renderer {
     env: Environment<RMenuEnv>,
     surfaces: Rc<RefCell<Vec<(u32, Surface)>>>,
+    renderer_context: Rc<RefCell<RendererContext>>,
     context: LoopContext,
 }
 
@@ -92,6 +103,7 @@ impl Surface {
         output: &wl_output::WlOutput,
         surface: wl_surface::WlSurface,
         layer_shell: &Attached<zwlr_layer_shell_v1::ZwlrLayerShellV1>,
+        renderer_context: Rc<RefCell<RendererContext>>,
         context: Rc<RefCell<AppContext>>,
         pool: RefCell<AutoMemPool>,
     ) -> Self {
@@ -145,17 +157,14 @@ impl Surface {
         // Commit so that the server will send a configure event
         surface.commit();
 
-        let font = font_kit::font::Font::from_bytes(Arc::new(SHARETECH_REGULAR_FONT.to_vec()), 0)
-            .expect("To load FreeMono TTF");
-
         Self {
             surface,
             layer_surface,
             next_render_event,
+            renderer_context,
             dimensions: None,
             context,
             pool,
-            font,
         }
     }
 
@@ -186,30 +195,27 @@ impl Surface {
                 Ok((canvas, buffer)) => {
                     let mut dt = DrawTarget::new(width, height);
 
-                    let context = self.context.borrow();
+                    let renderer_context = self.renderer_context.borrow();
 
-                    let foreground: SolidSource = context.config.style.foreground_color.clone().unwrap_or_else(|| DEFAULT_FOREGROUND).into();
-                    let background: SolidSource = context.config.style.background_color.clone().unwrap_or_else(|| DEFAULT_BACKGROUND).into();
-
-                    let point_size = 32.;
                     let options = DrawOptions::new();
-                    let fg_brush = Source::Solid(foreground);
-                    let bg_brush = Source::Solid(background);
+                    let point_size = renderer_context.font_size;
+                    let fg_brush = Source::Solid(renderer_context.foreground);
+                    let bg_brush = Source::Solid(renderer_context.background);
 
                     let filter = &self.context.borrow().input.0;
-                    let filter_text = format!("> {}", filter);
+                    let filter_text = format!("> {}|", filter);
 
                     dt.fill_rect(0., 0., width as f32, height as f32, &bg_brush, &options);
 
                     let offset = draw_text(
                         &mut dt,
-                        &self.font,
+                        &renderer_context.font,
                         point_size,
                         filter_text.as_str(),
-                        Point::new(0., height as f32 * 4. / 5.),
+                        Point::new(0., height as f32 * 3. / 5.),
                         &fg_brush,
                         &options,
-                        2.,
+                        renderer_context.font_spacing,
                     );
 
                     let mut start_list = offset.max(200.);
@@ -217,23 +223,16 @@ impl Surface {
                     // a little space just to be sure
                     start_list += 20.;
 
-                    for name in self
-                        .context
-                        .borrow()
-                        .list
-                        .filtered
-                        .iter()
-                        .filter_map(|command| command.path.file_name().and_then(|s| s.to_str()))
-                    {
+                    for name in self.context.borrow().list.filtered.iter().map(|c| &c.name) {
                         start_list = draw_text(
                             &mut dt,
-                            &self.font,
+                            &renderer_context.font,
                             point_size,
                             name,
-                            Point::new(start_list, height as f32 * 4. / 5.),
+                            Point::new(start_list, height as f32 * 3. / 5.),
                             &fg_brush,
                             &options,
-                            2.,
+                            renderer_context.font_spacing,
                         ) + 15.;
 
                         // break if we are outside
@@ -283,8 +282,61 @@ impl Drop for Surface {
 
 impl Renderer {
     pub fn new(env: Environment<RMenuEnv>, context: LoopContext) -> Self {
+        let renderer_context = {
+            let app_config = &context.app_context.borrow().app_config;
+
+            Rc::new(RefCell::new(RendererContext {
+                foreground: app_config
+                    .config
+                    .style
+                    .as_ref()
+                    .and_then(|style| style.foreground_color.clone())
+                    .unwrap_or(DEFAULT_FOREGROUND)
+                    .into(),
+                background: app_config
+                    .config
+                    .style
+                    .as_ref()
+                    .and_then(|style| style.background_color.clone())
+                    .unwrap_or(DEFAULT_BACKGROUND)
+                    .into(),
+                font: font_kit::font::Font::from_bytes(
+                    Arc::new(
+                        app_config
+                            .config
+                            .font
+                            .as_ref()
+                            .and_then(|f| f.path.as_ref())
+                            .and_then(|path| {
+                                if let Ok(data) = std::fs::read(path) {
+                                    Some(data)
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(DEFAULT_FONT.to_vec()),
+                    ),
+                    0,
+                )
+                .expect("To load FreeMono TTF"),
+                font_spacing: app_config
+                    .config
+                    .font
+                    .as_ref()
+                    .and_then(|f| f.spacing)
+                    .unwrap_or(DEFAULT_FONT_SPACING),
+                font_size: app_config
+                    .config
+                    .font
+                    .as_ref()
+                    .and_then(|f| f.size)
+                    .unwrap_or(DEFAULT_FONT_SIZE),
+            }))
+        };
+
         let renderer = Renderer {
             surfaces: Rc::new(RefCell::new(Vec::<(u32, Surface)>::new())),
+            renderer_context,
             context,
             env,
         };
@@ -304,6 +356,7 @@ impl Renderer {
 
         let env_handle = self.env.clone();
         let context_handle = self.context.app_context.clone();
+        let renderer_context_handle = self.renderer_context.clone();
         let surfaces_handle = self.surfaces.clone();
         let output_handler = move |output: wl_output::WlOutput, info: &OutputInfo| {
             if info.obsolete {
@@ -322,6 +375,7 @@ impl Renderer {
                         &output,
                         surface,
                         &layer_shell.clone(),
+                        renderer_context_handle.clone(),
                         context_handle.clone(),
                         RefCell::new(pool),
                     ),
@@ -513,15 +567,28 @@ impl Renderer {
             /* ENTER */
             28 => {
                 // execute !!
-                if let Some(target) = context.borrow().target() {
+                let (exit, binary) = if let Some(target) = context.borrow().target() {
                     info!("Execute {}", target);
 
-                    // launch and exit
-                    std::process::exit(command::launch(target));
+                    // launch
+                    (command::launch(target), Some(target.binary()))
                 } else {
                     // exit with failure (no target)
-                    std::process::exit(10);
+                    (10, None)
+                };
+
+                // write history
+                if let Some(binary) = binary {
+                    if let Err(e) = context
+                        .borrow_mut()
+                        .app_config
+                        .increment_and_store_history(binary)
+                    {
+                        warn!("Failed to store history data - {}", e);
+                    }
                 }
+
+                std::process::exit(exit);
             }
             _ => match utf8 {
                 Some(txt) => {

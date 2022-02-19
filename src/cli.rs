@@ -1,9 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use core::fmt;
-use log::info;
+use log::{debug, info};
 use serde::{de::Visitor, Deserialize, Deserializer};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Color {
@@ -13,16 +15,35 @@ pub struct Color {
     pub a: u8,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct Style {
     pub foreground_color: Option<Color>,
     pub background_color: Option<Color>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+pub struct Font {
+    pub path: Option<PathBuf>,
+    pub spacing: Option<f32>,
+    pub size: Option<f32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
 pub struct Config {
-    pub blacklist: Vec<String>,
-    pub style: Style,
+    pub blacklist: Option<Vec<String>>,
+    pub whitelist: Option<Vec<String>>,
+    pub style: Option<Style>,
+    pub font: Option<Font>,
+}
+
+#[derive(Debug, Default)]
+pub struct History(HashMap<String, u32>);
+
+#[derive(Debug)]
+pub struct AppConfig {
+    pub config: Config,
+    pub history: History,
+    args: Args,
 }
 
 #[derive(Parser, Debug)]
@@ -30,20 +51,93 @@ pub struct Config {
 pub struct Args {
     #[clap(short, long)]
     pub config: Option<PathBuf>,
+    #[clap(short, long)]
+    pub history: Option<PathBuf>,
 }
 
-pub fn parse() -> Result<Config> {
+pub fn parse() -> Result<AppConfig> {
     let mut args = Args::parse();
 
     if args.config.is_none() {
         args.config = dirs::home_dir().map(|h| h.join(".config/rmenu/config.yaml"))
     }
 
-    if let Some(path) = args.config {
+    let config = if let Some(path) = &args.config {
         info!("Reading config from {}", &path.display());
-        Ok(serde_yaml::from_reader(&std::fs::File::open(path)?)?)
+        serde_yaml::from_reader(&std::fs::File::open(path)?)?
     } else {
-        bail!("No config found!")
+        Default::default()
+    };
+
+    if args.history.is_none() {
+        args.history = dirs::home_dir().map(|h| h.join(".config/rmenu/history"))
+    }
+
+    let history = if let Some(path) = &args.history {
+        History::from_path(path.as_path())
+    } else {
+        Default::default()
+    };
+
+    Ok(AppConfig {
+        args,
+        history,
+        config,
+    })
+}
+
+impl AppConfig {
+    pub fn increment_and_store_history(&mut self, binary: String) -> std::io::Result<()> {
+        (*self.history.0.entry(binary).or_insert(0)) += 1;
+        self.store_history()
+    }
+    fn store_history(&self) -> std::io::Result<()> {
+        if let Some(path) = &self.args.history {
+            self.history.to_path(&path)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl History {
+    pub fn from_path(path: &Path) -> Self {
+        if let Ok(file) = std::fs::File::open(path) {
+            let re = regex::Regex::new(r"^(?P<binary>.*)\|(?P<weight>\d+)$").unwrap();
+            let x = BufReader::new(file)
+                .lines()
+                .filter_map(Result::ok)
+                .filter_map(|line| {
+                    debug!("Line {}", line);
+                    re.captures(&line).and_then(|groups| {
+                        if let (Some(path), Some(weight)) =
+                            (groups.name("binary"), groups.name("weight"))
+                        {
+                            Some((
+                                String::from(path.as_str()),
+                                weight.as_str().parse::<u32>().unwrap_or(0),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            Self(x)
+        } else {
+            Self(Default::default())
+        }
+    }
+    pub fn get_weight(&self, name: &String) -> u32 {
+        *self.0.get(name).unwrap_or(&0)
+    }
+    pub fn to_path(&self, path: &Path) -> std::io::Result<()> {
+        let mut file = std::fs::File::create(path)?;
+        for (binary, weight) in &self.0 {
+            file.write(format!("{}|{}\n", binary, weight).as_bytes())?;
+        }
+
+        Ok(())
     }
 }
 
