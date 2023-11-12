@@ -3,9 +3,9 @@ use clap::Parser;
 use core::fmt;
 use log::{debug, info};
 use serde::{de::Visitor, Deserialize, Deserializer};
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Color {
@@ -32,7 +32,7 @@ pub struct Font {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Config {
+pub struct StaticConfig {
   pub blacklist: Option<Vec<String>>,
   pub whitelist: Option<Vec<String>>,
   pub style: Option<Style>,
@@ -44,7 +44,7 @@ pub struct History(HashMap<String, u32>);
 
 #[derive(Debug)]
 pub struct AppConfig {
-  pub config: Config,
+  pub static_config: StaticConfig,
   pub history: History,
   args: Args,
 }
@@ -65,7 +65,7 @@ pub fn parse() -> Result<AppConfig> {
     args.config = dirs::home_dir().map(|h| h.join(".config/rmenu/config.yaml"))
   }
 
-  let config = if let Some(file) = &args.config.as_ref().and_then(|path| {
+  let static_config = if let Some(file) = &args.config.as_ref().and_then(|path| {
     std::fs::File::open(&path).ok().map(|file| {
       info!("Reading config from {}", path.display());
       file
@@ -89,7 +89,7 @@ pub fn parse() -> Result<AppConfig> {
   Ok(AppConfig {
     args,
     history,
-    config,
+    static_config,
   })
 }
 

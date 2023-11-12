@@ -1,6 +1,6 @@
 use std::{
-  fmt::Display,
   io::Result,
+  fmt::Display,
   path::{Path, PathBuf},
   process::Stdio,
 };
@@ -23,7 +23,7 @@ pub struct CommandList {
 
 impl CommandList {
   pub fn new(app_config: &config::AppConfig) -> std::io::Result<Self> {
-    let initial = gather_commands(&app_config.config)?;
+    let initial = gather_commands(&app_config.static_config)?;
     let filtered = Self::filter_data(None::<&String>, &initial, &app_config.history);
 
     Ok(Self { initial, filtered })
@@ -104,7 +104,7 @@ impl Command {
   }
 }
 
-fn gather_commands(config: &config::Config) -> std::io::Result<Vec<PathBuf>> {
+fn gather_commands(config: &config::StaticConfig) -> std::io::Result<Vec<PathBuf>> {
   let mut list = Vec::<PathBuf>::new();
 
   if let Ok(path) = std::env::var("PATH") {

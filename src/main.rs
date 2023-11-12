@@ -1,7 +1,7 @@
 mod app;
+mod renderer;
 mod command;
 mod config;
-//mod renderer;
 mod menu;
 
 use app::App;
