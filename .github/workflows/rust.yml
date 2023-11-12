@@ -1,4 +1,4 @@
-name: Rust
+name: CI
 
 on:
   push:
@@ -11,9 +11,8 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    container: "rust:slim"
     steps:
     - uses: actions/checkout@v2
     - name: Build
