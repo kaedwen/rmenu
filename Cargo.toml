@@ -1,6 +1,6 @@
 [package]
 name = "rmenu"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license-file = "LICENSE"
 
@@ -8,12 +8,13 @@ license-file = "LICENSE"
 
 [dependencies]
 dirs = "4"
-font-kit = "0.7"
+font-kit = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 clap = { version = "3.1", features = ["derive"] }
+smithay-client-toolkit = "0.18"
+wayland-protocols-wlr = "0.2.0"
 pathfinder_geometry = "0.5"
-smithay-client-toolkit = "0.15"
-wayland-client = "0.29"
+wayland-client = "0.31.1"
 env_logger = "0.8"
 serde_yaml = "0.8"
 regex = "1.5"
