@@ -12,7 +12,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: "rust:slim"
+    container: "rust:1.73"
     steps:
     - uses: actions/checkout@v2
     - name: Build
