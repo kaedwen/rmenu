@@ -54,7 +54,7 @@ pub struct AppConfig {
 pub struct Args {
   #[clap(short, long)]
   pub config: Option<PathBuf>,
-  #[clap(short, long)]
+  #[clap(long)]
   pub history: Option<PathBuf>,
 }
 
@@ -198,7 +198,7 @@ impl<'de> Deserialize<'de> for Color {
       type Value = Color;
 
       fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("struct PhoneNumber")
+        formatter.write_str("struct Color")
       }
 
       fn visit_str<E>(self, value: &str) -> Result<Color, E>
