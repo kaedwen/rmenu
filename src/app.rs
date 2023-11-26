@@ -23,9 +23,17 @@ impl AppContext {
   pub fn target(&self) -> Option<&command::Command> {
     self.list.filtered.get(self.current_index)
   }
-  pub fn filter(&mut self) {
+  fn filter(&mut self) {
       self.list.filter(&self.input, &self.config.history);
       info!("{}", self.list);
+  }
+  pub fn pop_and_filter(&mut self) {
+    self.input.pop();
+    self.filter()
+  }
+  pub fn append_and_filter(&mut self, input: &str) {
+    self.input.push_str(input);
+    self.filter()
   }
 }
 
@@ -56,13 +64,11 @@ impl App {
 
     let mut menu_shell = menu::Shell::new(app_context, globals, qh);
 
-    // We don't draw immediately, the configure will notify us when to first draw.
-    loop {
+    // Run the loop until exit
+    while !menu_shell.about_to_exit() {
       event_queue.blocking_dispatch(&mut menu_shell)?;
-
-      if menu_shell.about_to_exit() {
-        return Ok(());
-      }
     }
+
+    Ok(())
   }
 }

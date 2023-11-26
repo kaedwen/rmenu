@@ -356,7 +356,7 @@ impl Shell {
       .wl_surface()
       .frame(qh, self.layer.wl_surface().clone());
 
-    // Attach and commit to present.
+    // Attach and commit to present
     buffer
       .attach_to(self.layer.wl_surface())
       .expect("buffer attach");
@@ -371,19 +371,18 @@ impl Shell {
       }
       Keysym::BackSpace => {
         // pop one char
-        self.context.input.pop();
+        self.context.pop_and_filter();
       }
       Keysym::Tab => {
-        if self.context.modifiers.shift {
-          if self.context.current_index > 0 {
-            // shift index left
-            self.context.current_index -= 1;
-          } else {
-            if self.context.current_index < self.context.list.filtered_len() {
-              // shift index right
-              self.context.current_index += 1;
-            }
-          }
+        if self.context.current_index < self.context.list.filtered_len() {
+          // shift index right
+          self.context.current_index += 1;
+        }
+      }
+      Keysym::ISO_Left_Tab => {
+        if self.context.current_index > 0 {
+          // shift index left
+          self.context.current_index -= 1;
         }
       }
       Keysym::Return => {
@@ -411,11 +410,8 @@ impl Shell {
         Some(txt) => {
           debug!(" -> Received text `{}`", txt);
 
-          // append key to filter
-          self.context.input.push_str(txt.as_str());
-
-          // apply the filter
-          self.context.filter();
+          // append and apply the filter
+          self.context.append_and_filter(txt.as_str());
 
           // reset current index
           self.context.current_index = 0;
